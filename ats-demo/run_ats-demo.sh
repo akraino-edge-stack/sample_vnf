@@ -36,7 +36,7 @@ export OS_REGION_NAME=${OS_REGION_NAME:-RegionOne}
 export NAMESPACE="${NAMESPACE:-openstack}"
 
 STACK_NAME="${STACK_NAME:-ats-demo}"
-NETWORK_NAME="${NETWORK_NAME:-external}"
+NETWORK_NAME="${NETWORK_NAME:-public}"
 ZONE="${ZONE:-nova}"
 TIMEOUT="${TIMEOUT:-300}"
 

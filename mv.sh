@@ -14,6 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-scp -r ats-demo root@$1:/opt
+scp -r ats-demo/* root@$1:/opt
 echo $?
 exit 0
