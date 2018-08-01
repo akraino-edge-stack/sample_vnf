@@ -18,6 +18,7 @@ set -e
 # Define variables
 COMMAND='openstack'
 OPENSTACK_CLI_IMAGE="${OPENSTACK_CLI_IMAGE:-docker.io/openstackhelm/heat:newton}"
+NAMESPACE="${NAMESPACE:-openstack}"
 
 # Define Base Docker Command
 base_docker_command=$(cat << EndOfCommand

@@ -84,7 +84,7 @@ resources:
             template: $STACK-server
             params:
                 $STACK: { get_param: "OS::stack_name" }
-                
+
   client_flavor_name:
     type: OS::Heat::Value
     properties:
@@ -114,7 +114,7 @@ resources:
       ram: 8192
       vcpus: 4
       disk: 10
-      
+
   server_flavor:
     type: OS::Nova::Flavor
     properties:
@@ -124,7 +124,7 @@ resources:
       ram: 16384
       vcpus: 8
       disk: 20
-      
+
   server_init:
     type: OS::Heat::CloudConfig
     properties:
@@ -148,9 +148,6 @@ resources:
             str_replace:
                 template: |
                     #!/bin/bash
-                    exec >> /root/setup_ats.log
-                    exec 2>&1
-                    
                     echo "### SETTING UP SHELL VARIABLES"
                     export USER=root
                     export HOME=/root
@@ -190,10 +187,10 @@ resources:
                     echo "### CREATING RAMDISK"
                     modprobe brd rd_size=8388608 rd_nr=1
                     echo "brd rd_size=8388608 rd_nr=1" > /etc/modules
-                    chown nobody:nogroup /dev/ram0
+                    echo 'SUBSYSTEM=="block", KERNEL=="ram0", OWNER="nobody", GROUP="nogroup", MODE="0660"' > /etc/udev/rules.d/80-dev-ram0.rules
+                    udevadm control --reload-rules && udevadm trigger
                     ls -l /dev/ram*
                     fdisk -l /dev/ram*
-                    chown nobody:nogroup /dev/ram0
                     ls -l /dev/ram*
                     
                     echo "### STARTING APACHE TRAFFIC SERVER"
@@ -207,10 +204,14 @@ resources:
           permissions: "0700"
           content: |
             #!/bin/bash
+            exec 1> >(tee -a "/root/`basename $0`-`date -Im`.log") 2>&1
             echo "userdata started on hostname: $(uname -n) at" `date`
             STARTTIME=$(date +%s)
             sed -i -e 's|^PermitRootLogin .*$|PermitRootLogin yes|' /etc/ssh/sshd_config
             service sshd restart
+            echo "nameserver 8.8.8.8" >> /etc/resolvconf/resolv.conf.d/base
+            echo "nameserver 8.8.4.4" >> /etc/resolvconf/resolv.conf.d/base
+            resolvconf -u
             /root/setup_ats.sh
             ENDTIME=$(date +%s)
             echo "Monitor network throughput using 'speedometer -r ens3 -t ens3'"
@@ -227,9 +228,9 @@ resources:
       flavor: { get_attr: [ server_flavor_name, value ] }
       availability_zone: { get_param: Zone }
       networks:
-      - network: { get_param: NetID }
+        - port: { get_resource: server_port }
       config_drive: True
-      user_data_format: SOFTWARE_CONFIG
+      user_data_format: RAW
       user_data:
         get_resource: server_init
 
@@ -299,7 +300,7 @@ resources:
                     cd /root
                     source /root/ats-demo/bin/activate
                     i="900"
-                    while ! curl http://$SERVER_IP:8080/$ORIGINFILE >/dev/null && [ "$i" -gt 0 ] ; do 
+                    while ! curl http://$SERVER_IP:8080/$ORIGINFILE >/dev/null && [ "$i" -gt 0 ] ; do
                         echo "### WAITING UP TO [$i] SECONDS FOR FILE [$ORIGINFILE] TO BE ACCESSIBLE ON APACHE TRAFFIC SERVER [$SERVER_IP:8080]"
                         sleep 10
                         i=$[$i-10]
@@ -322,10 +323,14 @@ resources:
           permissions: "0700"
           content: |
             #!/bin/bash
+            exec 1> >(tee -a "/root/`basename $0`-`date -Im`.log") 2>&1
             echo "userdata started on hostname: $(uname -n) at" `date`
             STARTTIME=$(date +%s)
             sed -i -e 's|^PermitRootLogin .*$|PermitRootLogin yes|' /etc/ssh/sshd_config
             service sshd restart
+            echo "nameserver 8.8.8.8" >> /etc/resolvconf/resolv.conf.d/base
+            echo "nameserver 8.8.4.4" >> /etc/resolvconf/resolv.conf.d/base
+            resolvconf -u
             /root/setup_python.sh
             /root/run_locust.sh
             ENDTIME=$(date +%s)
@@ -344,11 +349,34 @@ resources:
       flavor: { get_attr: [ client_flavor_name, value ] }
       availability_zone: { get_param: Zone }
       networks:
-      - network: { get_param: NetID }
+        - port: { get_resource: client_port }
       config_drive: True
-      user_data_format: SOFTWARE_CONFIG
+      user_data_format: RAW
       user_data:
         get_resource: client_init
+
+  security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: >
+        Allows connection from remote IP (icmp, tcp 22, 8080, 8089)
+      rules:
+         - { remote_ip_prefix: 0.0.0.0/0, direction: ingress, protocol: icmp }
+         - { remote_ip_prefix: 0.0.0.0/0, direction: ingress, protocol: tcp, port_range_min: 22, port_range_max: 22}
+         - { remote_ip_prefix: 0.0.0.0/0, direction: ingress, protocol: tcp, port_range_min: 8080, port_range_max: 8080}
+         - { remote_ip_prefix: 0.0.0.0/0, direction: ingress, protocol: tcp, port_range_min: 8089, port_range_max: 8089}
+
+  server_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: NetID }
+      security_groups: [{ get_resource: security_group }]
+
+  client_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: NetID }
+      security_groups: [{ get_resource: security_group }]
 
 outputs:
   server_ip:
