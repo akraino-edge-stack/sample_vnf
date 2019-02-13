@@ -35,6 +35,7 @@ export OS_PASSWORD=${OS_PASSWORD:-password}
 export OS_REGION_NAME=${OS_REGION_NAME:-RegionOne}
 export NAMESPACE="${NAMESPACE:-openstack}"
 
+UBUNTU_URL=${UBUNTU_URL:-https://cloud-images.ubuntu.com/releases/16.04/release/ubuntu-16.04-server-cloudimg-amd64-disk1.img}
 STACK_NAME="${STACK_NAME:-ats-demo}"
 NETWORK_NAME="${NETWORK_NAME:-public}"
 ZONE="${ZONE:-nova}"
@@ -71,6 +72,31 @@ if [ -n "$STATUS" ]; then
     exit 1
 fi
 
+## DOWNLOAD UBUNTU CLOUD IMAGE IF IT DOESN"T EXIST
+UBUNTU_IMAGE=${UBUNTU_URL##*/}
+if [ -n "$UBUNTU_IMAGE" ] && [ ! -f $UBUNTU_IMAGE ]; then 
+    echo "Downloading ubuntu image from [$UBUNTU_URL]"
+    curl -LO "$UBUNTU_URL"
+fi
+
+## LOAD GLANCE IMAGE IF IT DOESN'T EXIST
+IMAGE_NAME=$STACK_NAME-image
+STATUS=$(./run_openstack_cli.sh image list -f value -c "Name" | grep "$IMAGE_NAME" | tr -d '\r')
+if [ -n "$STATUS" ]; then
+    CTIME=$(./run_openstack_cli.sh image show "$IMAGE_NAME" -c created_at -f value | tr -d '\r')
+    GSIZE=$(./run_openstack_cli.sh image show "$IMAGE_NAME" -c size -f value | tr -d '\r')
+    DSIZE=$(du -b $UBUNTU_IMAGE | cut -f 1)
+    echo "WARNING: using existing glance image [$IMAGE_NAME] created on [$CTIME] with size [$GSIZE]."
+    if [ $GSIZE -ne $DSIZE ]; then echo "WARNING: glance image [$IMAGE_NAME] size [$GSIZE] does not match disk image [$UBUNTU_IMAGE] size [$DSIZE]"; fi
+else
+    ERROR=$(./run_openstack_cli.sh image create --public --file $UBUNTU_IMAGE "$IMAGE_NAME")
+    if [ "$?" -ne 0 ]; then
+        echo "FAILED:  error creating image [ats-demo]."
+        echo "ERROR :  $ERROR"
+        exit 1
+    fi
+fi
+
 ## GET EXTERNAL NETWORK
 NET_ID=$($SCRIPT_PATH/run_openstack_cli.sh network list -f csv | tr -d '\r' | grep "$NETWORK_NAME" | cut -d ',' -f 1 | sed -e 's/^"//' -e 's/"$//')
 if [ -z "$NET_ID" ]; then
@@ -80,7 +106,7 @@ if [ -z "$NET_ID" ]; then
 fi
 
 ## CREATE HEAT STACK
-ERROR=$($SCRIPT_PATH/run_openstack_cli.sh stack create -t ./ats-demo.yaml $STACK_NAME --parameter NetID=$NET_ID --parameter Zone=$ZONE)
+ERROR=$($SCRIPT_PATH/run_openstack_cli.sh stack create -t ./ats-demo.yaml $STACK_NAME --parameter Image=$IMAGE_NAME --parameter NetID=$NET_ID --parameter Zone=$ZONE)
 if [ "$?" -ne 0 ]; then
     echo "FAILED:  error creating stack [$STACK_NAME]."
     echo "ERROR :  $ERROR"

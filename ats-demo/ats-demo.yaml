@@ -21,10 +21,10 @@ description: >
   and url of the client dashboard.
 
 parameters:
-  ImageUrl:
+  Image:
     type: string
-    description: URL of Ubuntu cloud image
-    default: https://cloud-images.ubuntu.com/releases/16.04/release/ubuntu-16.04-server-cloudimg-amd64-disk1.img
+    description: Ubuntu cloud image name
+    default: ats-demo-image
   ImagePwd:
     type: string
     description: Password for client VM
@@ -46,24 +46,6 @@ parameters:
     description: External Network ID
 
 resources:
-
-  image_name:
-    type: OS::Heat::Value
-    properties:
-      type: string
-      value:
-        str_replace:
-            template: $STACK-image
-            params:
-                $STACK: { get_param: "OS::stack_name" }
-
-  glance_image:
-    type: OS::Glance::Image
-    properties:
-      container_format: bare
-      disk_format: qcow2
-      name: { get_attr: [ image_name, value ] }
-      location: { get_param: ImageUrl }
 
   client_name:
     type: OS::Heat::Value
@@ -224,7 +206,7 @@ resources:
     type: OS::Nova::Server
     properties:
       name: { get_attr: [ server_name, value ] }
-      image: { get_resource: glance_image }
+      image: { get_param: Image }
       flavor: { get_attr: [ server_flavor_name, value ] }
       availability_zone: { get_param: Zone }
       networks:
@@ -345,7 +327,7 @@ resources:
     depends_on: [server]
     properties:
       name: { get_attr: [ client_name, value ] }
-      image: { get_resource: glance_image }
+      image: { get_param: Image }
       flavor: { get_attr: [ client_flavor_name, value ] }
       availability_zone: { get_param: Zone }
       networks:
